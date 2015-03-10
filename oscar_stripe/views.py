@@ -8,7 +8,7 @@ from oscar_stripe.facade import Facade
 
 from . import PAYMENT_METHOD_STRIPE, PAYMENT_EVENT_PURCHASE, STRIPE_EMAIL, STRIPE_TOKEN
 
-import forms
+from .forms import StripeTokenForm
 
 SourceType = get_model('payment', 'SourceType')
 Source = get_model('payment', 'Source')
@@ -23,7 +23,7 @@ class PaymentDetailsView(CorePaymentDetailsView):
     def get_context_data(self, **kwargs):
         ctx = super(PaymentDetailsView, self).get_context_data(**kwargs)
         if self.preview:
-            ctx['stripe_token_form'] = forms.StripeTokenForm(self.request.POST)
+            ctx['stripe_token_form'] = StripeTokenForm(self.request.POST)
             ctx['order_total_incl_tax_cents'] = (
                 ctx['order_total'].incl_tax * 100
             ).to_integral_value()
