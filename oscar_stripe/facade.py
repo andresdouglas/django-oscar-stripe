@@ -26,7 +26,8 @@ class Facade(object):
     def charge(self,
         order_number,
         total,
-        card,
+        source,
+        customer=None,
         currency=settings.STRIPE_CURRENCY,
         description=None,
         metadata=None,
@@ -38,7 +39,8 @@ class Facade(object):
             stripe_auth_id = stripe.Charge.create(
                     amount=(total.incl_tax * 100).to_integral_value(),
                     currency=currency,
-                    card=card,
+                    source=source,
+                    customer=customer,
                     description=description,
                     metadata=(metadata or {'order_number': order_number}),
                     capture = charge_and_capture_together,
@@ -46,9 +48,9 @@ class Facade(object):
                 ).id
             logger.info("Payment authorized for order %s via stripe." % (order_number))
             return stripe_auth_id
-        except (stripe.CardError, e):
+        except stripe.CardError as e:
             raise UnableToTakePayment(self.get_friendly_decline_message(e))
-        except (stripe.StripeError, e):
+        except stripe.StripeError as e:
             raise InvalidGatewayRequestError(self.get_friendly_error_message(e))
 
     def capture(self, order_number, **kwargs):
@@ -74,3 +76,43 @@ class Facade(object):
             raise Exception("Capture Failiure could not find payment source for Order %s" % order_number)
         except Order.DoesNotExist:
             raise Exception("Capture Failiure Order %s does not exist" % order_number)
+
+    def create_customer(self, token, email, description):
+        stripe_customer = stripe.Customer.create(
+            source=token,
+            email=email,
+            description=description,
+        )
+        return stripe_customer.id
+
+    def get_card_from_token(self, tok):
+        token = stripe.Token.retrieve(tok)
+        return token.card
+
+    def add_card_to_user(self, stripe_id, tok):
+        customer = stripe.Customer.retrieve(stripe_id)
+        customer.sources.create(card=tok)
+
+    def retrieve_customer_card_from_fingerprint(self, customer_id, fingerprint):
+        customer = stripe.Customer.retrieve(customer_id)
+        cards = customer.sources.all()
+        the_card = None
+        for card in cards.data:
+            if card.fingerprint == fingerprint:
+                return card.id
+        # TODO: might want to just return None
+        if None == the_card:
+            return customer.default_source
+
+    def get_token_from_card(self, card):
+        """
+            WARNING: Do not use this method only for testing. Never handle actual user card data like this
+            Card must be a dict of the form:
+            card={
+                    "number": '4242424242424242',
+                    "exp_month": 12,
+                    "exp_year": 2016,
+                    "cvc": '123'
+                }
+        """
+        return stripe.Token.create(card=card)
